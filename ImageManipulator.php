@@ -71,6 +71,11 @@ class ImageManipulator
 		}
 	}
 
+	public function watermark($watermarkImage, $isLeft, $isTop, $marginX, $marginY)
+	{
+		return $this->driverInstance->watermark($this, $watermarkImage, $isLeft, $isTop, $marginX, $marginY);
+	}
+
 	public function isValidImage()
 	{
 		if (!$this->type)

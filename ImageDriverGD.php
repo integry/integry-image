@@ -8,23 +8,16 @@ class ImageDriverGD extends ImageDriver
 		$path = $image->getImagePath();
 		$height = $image->getHeight();
 		$width = $image->getWidth();
-		$quality = $image->getQuality();
-		$type = $image->getType();
 
 		$this->setMemoryForImage($path);
-		switch($type)
-		{
-			case IMAGETYPE_GIF:   $newimg = imagecreatefromgif($path); break;
-			case IMAGETYPE_JPEG:  $newimg = imagecreatefromjpeg($path); break;
-			case IMAGETYPE_PNG:   $newimg = imagecreatefrompng($path); break;
-			default: throw new ApplicationException('Invalid image type: ' . $type);
-		}
+
+		$newimg = $this->getGDImage($path);
 
 		if($newimg)
 		{
 			// resize large images in two steps - first resample, then resize
 			// http://lt.php.net/manual/en/function.imagecopyresampled.php
-			if ($width > 1500 || $height > 1200)
+			if (($width > 1500 || $height > 1200) && ($newWidth < 1024 && $newHeight < 768))
 			{
 				list($width, $height) = $this->resample($newimg, $image, $width, $height, 1024, 768, 0);
 			}
@@ -43,15 +36,7 @@ class ImageDriverGD extends ImageDriver
 				return true;
 			}
 
-			switch($type)
-			{
-				case IMAGETYPE_GIF: imagegif($newimg, $newPath); break;
-				case IMAGETYPE_PNG: imagepng($newimg, $newPath);  break;
-				case IMAGETYPE_JPEG:
-				default:
-					imagejpeg($newimg, $newPath, $quality);
-				break;
-			}
+			$this->save($image->getType(), $newimg, $newPath, $image->getQuality());
 
 	 		imagedestroy($newimg);
 			return true;
@@ -62,12 +47,70 @@ class ImageDriverGD extends ImageDriver
 		}
 	}
 
+	private function getGDImage($path)
+	{
+		$imageInfo = getimagesize($path);
+
+		switch($imageInfo[2])
+		{
+			case IMAGETYPE_GIF:   return imagecreatefromgif($path); break;
+			case IMAGETYPE_JPEG:  return imagecreatefromjpeg($path); break;
+			case IMAGETYPE_PNG:   return imagecreatefrompng($path); break;
+			default: throw new ApplicationException('Invalid image type: ' . $imageInfo[2]);
+		}
+	}
+
 	public function getValidTypes()
 	{
 	  	return array(1, /* GIF */
 	  				 2, /* JPEG */
 	  				 3  /* PNG */
 		  			 );
+	}
+
+	public function watermark(ImageManipulator $image, $watermarkImage, $isLeft, $isTop, $marginX, $marginY)
+	{
+		// Load the stamp and the photo to apply the watermark to
+		$stamp = $this->getGDImage($watermarkImage);
+		$im = $this->getGDImage($image->getImagePath());
+
+		// Set the margins for the stamp and get the height/width of the stamp image
+		$sx = imagesx($stamp);
+		$sy = imagesy($stamp);
+
+		// center?
+		if (is_null($marginX) && is_null($marginY))
+		{
+			$left = (imagesx($im) - $sx) / 2;
+			$top = (imagesy($im) - $sy) / 2;
+		}
+		else
+		{
+			$left = $isLeft ? $marginX : imagesx($im) - $sx - $marginX;
+			$top = $isTop ? $marginY : imagesy($im) - $sy - $marginY;
+		}
+
+		// Copy the stamp image onto our photo using the margin offsets and the photo
+		// width to calculate positioning of the stamp.
+		imagecopy($im, $stamp, $left, $top, 0, 0, $sx, $sy);
+
+		// Output and free memory
+		$this->save($image->getType(), $im, $image->getImagePath(), $image->getQuality());
+
+		imagedestroy($im);
+	}
+
+	private function save($type, $img, $path, $quality)
+	{
+		switch($type)
+		{
+			case IMAGETYPE_GIF: imagegif($img, $path); break;
+			case IMAGETYPE_PNG: imagepng($img, $path);  break;
+			case IMAGETYPE_JPEG:
+			default:
+				imagejpeg($img, $path, $quality);
+			break;
+		}
 	}
 
 	private function setMemoryForImage($filename)
